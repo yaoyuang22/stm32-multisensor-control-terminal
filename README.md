@@ -58,7 +58,7 @@
                        |
                  STM32 Hardware
 
-
+```
 ## 关键技术
 
 ### UART DMA + IDLE + RingBuffer
