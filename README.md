@@ -46,7 +46,7 @@
         |              |               |
    app_command     app_control     app_monitor
         |              |               |
-        --------------- APP -------------
+        --------------APP -------------
                        |
                       BSP
                        |
