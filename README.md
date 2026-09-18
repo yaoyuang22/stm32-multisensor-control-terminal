@@ -40,21 +40,21 @@
 ### 裸机版本
 
 ```text
-                Main Super Loop
+              Main Super Loop
                        |
-          -------------------------
-          |           |           |
-     app_command  app_control  app_monitor
-          |           |           |
-          ------------ APP --------
+        --------------------------------
+        |              |               |
+   app_command     app_control     app_monitor
+        |              |               |
+        --------------- APP -------------
                        |
                       BSP
                        |
-     -----------------------------------------
-     |        |        |        |        |
-    ADC     Servo     SHT30    W25Q64  Encoder/Key
-                       |
-                      HAL
+    -------------------------------------------
+    |        |        |        |             |
+   ADC     Servo     SHT30    W25Q64     Encoder/Key
+    |        |        |        |             |
+    ------------------ HAL --------------------
                        |
                  STM32 Hardware
 
