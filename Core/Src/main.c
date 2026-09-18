@@ -18,6 +18,7 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "cmsis_os.h"
 #include "adc.h"
 #include "dma.h"
 #include "i2c.h"
@@ -62,8 +63,6 @@
 
 /* USER CODE BEGIN PV */
 #define DMA_RX_SIZE 64
-#define ADC_BUF_SIZE 16
-static uint16_t adc_buffer[ADC_BUF_SIZE];//ADC是0~4095 也就是2的12次方 uint8_t装不下 16的话就0~65535 对应HALF WORD 半字=2byte=16bit
 static volatile uint8_t timer_flag = 0;
 static uint8_t dma_rx_buf[DMA_RX_SIZE];
 volatile uint8_t key_flag = 0;
@@ -84,6 +83,7 @@ volatile uint8_t ic_result_flag = 0;
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
+void MX_FREERTOS_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -131,15 +131,23 @@ int main(void)
   MX_TIM1_Init();
   /* USER CODE BEGIN 2 */
 OLED_Init();
-HAL_TIM_Base_Start_IT(&htim3);//“启动 TIM3 基本定时器，并开启中断
+
 HAL_UARTEx_ReceiveToIdle_DMA(&huart1,dma_rx_buf,sizeof(dma_rx_buf));//启动 DMA 接收，直到串口空闲时或者接收数组满时停止并进入返回函数HAL_UARTEx_RxEventCallback
 __HAL_DMA_DISABLE_IT(huart1.hdmarx, DMA_IT_HT);//阻止HAL_UARTEx_ReceiveToIdle_DMA在存到一半时进入HAL_UARTEx_RxEventCallback返回函数
 HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_2);//开启TIM2和TIM2通道2的PWM
-HAL_ADCEx_Calibration_Start(&hadc1);//开启ADC转换之前先进行ADC校准
-HAL_ADC_Start_DMA(&hadc1,(uint32_t*)adc_buffer,ADC_BUF_SIZE);//启动 ADC1，并使用它所关联的 DMA，把 ADC 转换结果连续存入 adc_buffer，一轮长度为 ADC_BUF_SIZE。DMA和usart1 rx的channel不一样
+
 App_ControlInit();
 App_ConfigLoad();
   /* USER CODE END 2 */
+
+  /* Init scheduler */
+  osKernelInitialize();  /* Call init function for freertos objects (in cmsis_os2.c) */
+  MX_FREERTOS_Init();
+
+  /* Start scheduler */
+  osKernelStart();
+
+  /* We should never get here as control is now taken by the scheduler */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
@@ -156,8 +164,8 @@ if(Key_GetPressEvent())     //一次有效按键事件
 {
     App_ConfigSave();//按下按键后将数据存入w25q64中
 }
-/* ================= 1s TASK ================= */ 	
-App_MonitorTask(adc_buffer, ADC_BUF_SIZE);  
+
+
 	 	
 }
     /* USER CODE END WHILE */
@@ -230,13 +238,6 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) //外部中断时触发的返回�
 }
 
 }	
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)//定时器达到时间时触发的返回函数
-{
-    if(htim->Instance==TIM3)
-	{
-		App_MonitorTick();
-	}
-}
 
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart,    //UART返回函数
                                 uint16_t Size)
@@ -256,6 +257,28 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart,    //UART返回函数
 
 
 /* USER CODE END 4 */
+
+/**
+  * @brief  Period elapsed callback in non blocking mode
+  * @note   This function is called  when TIM4 interrupt took place, inside
+  * HAL_TIM_IRQHandler(). It makes a direct call to HAL_IncTick() to increment
+  * a global variable "uwTick" used as application time base.
+  * @param  htim : TIM handle
+  * @retval None
+  */
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+  /* USER CODE BEGIN Callback 0 */
+
+  /* USER CODE END Callback 0 */
+  if (htim->Instance == TIM4)
+  {
+    HAL_IncTick();
+  }
+  /* USER CODE BEGIN Callback 1 */
+
+  /* USER CODE END Callback 1 */
+}
 
 /**
   * @brief  This function is executed in case of error occurrence.
