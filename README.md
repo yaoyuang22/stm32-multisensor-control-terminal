@@ -37,26 +37,28 @@
 
 ## 软件架构
 
-```text
-                Main / FreeRTOS Task
-                        |
-              ---------------------
-              |                   |
-             APP                 APP
-      app_control           app_monitor
-      app_command           app_config
-              |                   |
-              -------- BSP --------
-                        |
-          -----------------------------
-          |      |      |      |     |
-        ADC    Servo   SHT30  W25Q64 Encoder
-          |
-         HAL
-          |
-      STM32 Hardware
+### 裸机版本
 
-```
+```text
+                Main Super Loop
+                       |
+          -------------------------
+          |           |           |
+     app_command  app_control  app_monitor
+          |           |           |
+          ------------ APP --------
+                       |
+                      BSP
+                       |
+     -----------------------------------------
+     |        |        |        |        |
+    ADC     Servo     SHT30    W25Q64  Encoder/Key
+                       |
+                      HAL
+                       |
+                 STM32 Hardware
+
+
 ## 关键技术
 
 ### UART DMA + IDLE + RingBuffer
