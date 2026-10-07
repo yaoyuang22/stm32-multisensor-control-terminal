@@ -1445,6 +1445,11 @@
               <FileType>5</FileType>
               <FilePath>..\APP\app_config.h</FilePath>
             </File>
+            <File>
+              <FileName>app_rtos.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\APP\app_rtos.h</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>

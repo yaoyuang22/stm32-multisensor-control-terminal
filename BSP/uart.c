@@ -1,6 +1,6 @@
 #include "uart.h"
 #include "stm32f1xx_hal.h"
-extern UART_HandleTypeDef huart1;
+#include "usart.h "
 #include "stdio.h"
 #define UART_RING_SIZE 64
 static uint8_t uart_ring[UART_RING_SIZE];

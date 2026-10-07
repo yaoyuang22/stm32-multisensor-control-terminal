@@ -31,8 +31,6 @@
 /* USER CODE BEGIN Includes */
 #include "uart.h"
 #include <stdio.h>
-#include "app_command.h"
-#include "app_monitor.h"
 #include "app_control.h"
 #include "app_config.h"
 #include "bsp_led.h"
@@ -42,6 +40,7 @@
 #include "bsp_w25q64.h"
 #include "bsp_encoder.h"
 #include "bsp_key.h"
+#include "app_rtos.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -153,13 +152,13 @@ App_ConfigLoad();
   /* USER CODE BEGIN WHILE */
   while (1) 
   {  
-/* ================= UART TASK ================= */
-Command_Task();
-/* ================= ENCODER TASK ================= */  
-App_ControlTask();
+
+
 
 /* ================= KEY TASK ================= */
 Key_Task();//负责“检测松开稳定50ms、解除锁定”
+	  
+
 if(Key_GetPressEvent())     //一次有效按键事件
 {
     App_ConfigSave();//按下按键后将数据存入w25q64中
@@ -233,15 +232,31 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) //外部中断时触发的返回�
 	
 	/* 编码器A相 PB10 */
     else if(GPIO_Pin == GPIO_PIN_10)
-{
-    Encoder_EXTI_Handler();
-}
+ {
+    int8_t step = Encoder_EXTI_Handler();
+	  if (step != 0)
+    {
+        ControlMsg_t msg;
 
-}	
+        msg.cmd = CTRL_ENCODER_STEP;
+        msg.value = step;
+
+        if(osMessageQueuePut(controlQueueHandle,
+                              &msg,
+                              0,
+                              0)!=osOK)
+			{
+				control_queue_drop_count++;
+			}
+    }
+
+}
+}
 
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart,    //UART返回函数
                                 uint16_t Size)
-{   uint16_t i;
+{  
+	uint16_t i;
     if(huart->Instance == USART1)
 	{  
 		for(i = 0; i < Size; i++)
@@ -250,6 +265,7 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart,    //UART返回函数
     }
 		HAL_UARTEx_ReceiveToIdle_DMA(huart,dma_rx_buf,sizeof(dma_rx_buf));
 	  __HAL_DMA_DISABLE_IT(huart1.hdmarx, DMA_IT_HT);
+	  osThreadFlagsSet(CommandTaskHandle, CMD_RX_FLAG);//找到 CommandTask，把它自己的 Thread Flags 中 CMD_RX_FLAG 对应的位设置成 1。
     }
 	
 }

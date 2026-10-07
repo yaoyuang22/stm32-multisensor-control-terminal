@@ -9,6 +9,7 @@
 #include "bsp_servo.h"
 #include "app_config.h"
 #include "app_control.h"
+#include "app_rtos.h"
 #define CMD_SIZE 32
 static char cmd[CMD_SIZE];
 
@@ -18,50 +19,65 @@ void Command_Process(char *cmd)
 	 if(strcmp(cmd,"LED ON")==0)
 		{
 		  LED_ON();
-		OLED_Clear();
-		OLED_ShowString(0, 8, "UART: OK ");
-		OLED_ShowString(0, 16, "LED: ON ");
-        OLED_ShowString(0, 24, "CMD: LED ON");
-        OLED_Update();
+		osMutexAcquire(uartMutexHandle, osWaitForever);//多task同时访问同一个资源时作为钥匙，谁拿到谁才能用（保护资源）
         printf("LED ON OK\r\n");
+		osMutexRelease(uartMutexHandle);//命令进行完释放钥匙
 		}
 	    else if(strcmp(cmd,"LED OFF")==0)
 	    {
 		  LED_OFF();
-			OLED_Clear();
-		OLED_ShowString(0, 8, "UART: OK ");
-		OLED_ShowString(0, 16, "LED: OFF");
-        OLED_ShowString(0, 24, "CMD: LED OFF");
-        OLED_Update();
+		osMutexAcquire(uartMutexHandle, osWaitForever);//多task同时访问同一个资源时作为钥匙，谁拿到谁才能用（保护资源）
         printf("LED OFF OK\r\n");
+		osMutexRelease(uartMutexHandle);//命令进行完释放钥匙
 		}
 		 else if(strcmp(cmd,"READ")==0)
 		 {
 		  float temp;
           float hum;
+		osMutexAcquire(i2cMutexHandle, osWaitForever);//保护i2c
         uint8_t status=SHT30_Read(&temp,&hum);
+		osMutexRelease(i2cMutexHandle);//命令进行完释放钥匙
         if(status==0)
-         { OLED_Clear();
+         { 
+		osMutexAcquire(uartMutexHandle, osWaitForever);//多task同时访问同一个资源时作为钥匙，谁拿到谁才能用（保护资源）
          printf("temperature=%.2f\r\n",temp);
-		OLED_ShowString(0, 8, "TEMP:");//一个字符5个像素+1个间隔 5个字符就是5×6=3
-		OLED_ShowNum(30,8,(uint32_t)temp);
-        printf("humidity=%.2f\r\n",hum);
-		OLED_ShowString(0, 16, "HUM:");
-		OLED_ShowNum(24,16,(uint32_t)hum);
-            OLED_Update();
+		 printf("humidity=%.2f\r\n",hum);
+		osMutexRelease(uartMutexHandle);//命令进行完释放钥匙
          }      
           else
-          {OLED_Clear();
+          {
+		  osMutexAcquire(uartMutexHandle, osWaitForever);//多task同时访问同一个资源时作为钥匙，谁拿到谁才能用（保护资源）
 	      printf("SHT30 ERROR=%d\r\n", status);
+		  osMutexRelease(uartMutexHandle);//命令进行完释放钥匙
 	      }
     	}
 		 else if(strcmp(cmd, "SAVE") == 0)
         {
-           App_ConfigSave();
+         
+			ControlMsg_t msg;
+                msg.cmd   = CTRL_SAVE;
+                msg.value = 0;
+			if(osMessageQueuePut(controlQueueHandle,
+                              &msg,
+                              0,
+                              0)!=osOK)
+			{
+				control_queue_drop_count++;
+			}
         }
         else if(strcmp(cmd, "LOAD") == 0)
         {
-          App_ConfigLoad();
+      
+			ControlMsg_t msg;
+                msg.cmd   = CTRL_LOAD;
+                msg.value = 0;
+			if(osMessageQueuePut(controlQueueHandle,
+                              &msg,
+                              0,
+                              0)!=osOK)
+			{
+				control_queue_drop_count++;
+			}
         }
 		 else if(strncmp(cmd,"SERVO ",6)==0)
 		 {
@@ -69,30 +85,42 @@ void Command_Process(char *cmd)
 			angle=atoi(&cmd[6]);
 			 if((angle>=0)&&(angle<=180))
 			 { 
-				App_ControlSetServoAngle((uint8_t)angle);
-				printf("SERVO OK angle=%d\r\n",angle);
-				 
+				
+				ControlMsg_t msg;
+                msg.cmd   = CTRL_SERVO_SET;
+                msg.value = angle;
+                if(osMessageQueuePut(controlQueueHandle,
+                              &msg,
+                              0,
+                              0)!=osOK)
+			{
+				control_queue_drop_count++;
+			}
+				 osMutexAcquire(uartMutexHandle, osWaitForever);//多task同时访问同一个资源时作为钥匙，谁拿到谁才能用（保护资源
+				 printf("SERVO OK angle=%d\r\n",angle);
+				 osMutexRelease(uartMutexHandle);//命令进行完释放钥匙
 			 }
 			 else
-			 {
+			 {  osMutexAcquire(uartMutexHandle, osWaitForever);//多task同时访问同一个资源时作为钥匙，谁拿到谁才能用（保护资源
 				 printf("SERVO RANGE ERROR\r\n");
+				 osMutexRelease(uartMutexHandle);//命令进行完释放钥匙
 			 }
 		 }
 
 	    else
-	    { OLED_Clear();
-		 OLED_ShowString(0, 24, "CMD: WRONG ");
-         OLED_Update();
+	    { 
+		osMutexAcquire(uartMutexHandle, osWaitForever);//多task同时访问同一个资源时作为钥匙，谁拿到谁才能用（保护资源
          printf("WRONG\r\n");
+		osMutexRelease(uartMutexHandle);//命令进行完释放钥匙
 		}
       
 }
 
 void Command_Task(void)
 {
-    static uint8_t rx_data;//在函数内部用 static修饰局部变量，变量不再随函数调用创建销毁，而是在程序整个运行期间都存在​，且只在第一次执行到定义处时初始化一次因为在主函数循环时会反复调用防止重置
-    static uint8_t idx = 0;
-	if(RingBuffer_Read(&rx_data) == 0)
+    uint8_t rx_data;
+    static uint8_t idx = 0;//在函数内部用 static修饰局部变量，变量不再随函数调用创建销毁，而是在程序整个运行期间都存在​，且只在第一次执行到定义处时初始化一次因为在主函数循环时会反复调用防止重置
+	while (RingBuffer_Read(&rx_data) == 0)
        {
 		if(idx<sizeof(cmd)-1)
 	    {

@@ -22,10 +22,16 @@
 #include "task.h"
 #include "main.h"
 #include "cmsis_os.h"
-#include "app_monitor.h"
+
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
+#include "app_monitor.h"
+#include "app_command.h"
+#include "app_rtos.h"
+#include "app_control.h"
+#include "app_config.h"
+#include "bsp_key.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -35,7 +41,8 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+volatile uint32_t control_queue_drop_count = 0;
+#define CMD_RX_FLAG    (1U << 0)
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -47,17 +54,10 @@
 /* USER CODE BEGIN Variables */
 
 /* USER CODE END Variables */
-/* Definitions for Task1 */
-osThreadId_t Task1Handle;
-const osThreadAttr_t Task1_attributes = {
-  .name = "Task1",
-  .stack_size = 128 * 4,
-  .priority = (osPriority_t) osPriorityNormal,
-};
-/* Definitions for Task2 */
-osThreadId_t Task2Handle;
-const osThreadAttr_t Task2_attributes = {
-  .name = "Task2",
+/* Definitions for KeyTask */
+osThreadId_t KeyTaskHandle;
+const osThreadAttr_t KeyTask_attributes = {
+  .name = "KeyTask",
   .stack_size = 128 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
@@ -68,15 +68,45 @@ const osThreadAttr_t MonitorTask_attributes = {
   .stack_size = 128 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
+/* Definitions for CommandTask */
+osThreadId_t CommandTaskHandle;
+const osThreadAttr_t CommandTask_attributes = {
+  .name = "CommandTask",
+  .stack_size = 128 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
+};
+/* Definitions for ControlTask */
+osThreadId_t ControlTaskHandle;
+const osThreadAttr_t ControlTask_attributes = {
+  .name = "ControlTask",
+  .stack_size = 128 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
+};
+/* Definitions for controlQueue */
+osMessageQueueId_t controlQueueHandle;
+const osMessageQueueAttr_t controlQueue_attributes = {
+  .name = "controlQueue"
+};
+/* Definitions for uartMutex */
+osMutexId_t uartMutexHandle;
+const osMutexAttr_t uartMutex_attributes = {
+  .name = "uartMutex"
+};
+/* Definitions for i2cMutex */
+osMutexId_t i2cMutexHandle;
+const osMutexAttr_t i2cMutex_attributes = {
+  .name = "i2cMutex"
+};
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
 
 /* USER CODE END FunctionPrototypes */
 
-void StartTask1(void *argument);
-void StartTask2(void *argument);
+void StartKeyTask(void *argument);
 void StartMonitorTask(void *argument);
+void StartCommandTask(void *argument);
+void StartControlTask(void *argument);
 
 void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
 
@@ -89,6 +119,12 @@ void MX_FREERTOS_Init(void) {
   /* USER CODE BEGIN Init */
 
   /* USER CODE END Init */
+  /* Create the mutex(es) */
+  /* creation of uartMutex */
+  uartMutexHandle = osMutexNew(&uartMutex_attributes);
+
+  /* creation of i2cMutex */
+  i2cMutexHandle = osMutexNew(&i2cMutex_attributes);
 
   /* USER CODE BEGIN RTOS_MUTEX */
   /* add mutexes, ... */
@@ -102,19 +138,26 @@ void MX_FREERTOS_Init(void) {
   /* start timers, add new ones, ... */
   /* USER CODE END RTOS_TIMERS */
 
+  /* Create the queue(s) */
+  /* creation of controlQueue */
+  controlQueueHandle = osMessageQueueNew (8, 8, &controlQueue_attributes);
+
   /* USER CODE BEGIN RTOS_QUEUES */
   /* add queues, ... */
   /* USER CODE END RTOS_QUEUES */
 
   /* Create the thread(s) */
-  /* creation of Task1 */
-  Task1Handle = osThreadNew(StartTask1, NULL, &Task1_attributes);
-
-  /* creation of Task2 */
-  Task2Handle = osThreadNew(StartTask2, NULL, &Task2_attributes);
+  /* creation of KeyTask */
+  KeyTaskHandle = osThreadNew(StartKeyTask, NULL, &KeyTask_attributes);
 
   /* creation of MonitorTask */
   MonitorTaskHandle = osThreadNew(StartMonitorTask, NULL, &MonitorTask_attributes);
+
+  /* creation of CommandTask */
+  CommandTaskHandle = osThreadNew(StartCommandTask, NULL, &CommandTask_attributes);
+
+  /* creation of ControlTask */
+  ControlTaskHandle = osThreadNew(StartControlTask, NULL, &ControlTask_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -126,44 +169,39 @@ void MX_FREERTOS_Init(void) {
 
 }
 
-/* USER CODE BEGIN Header_StartTask1 */
+/* USER CODE BEGIN Header_StartKeyTask */
 /**
-  * @brief  Function implementing the Task1 thread.
+  * @brief  Function implementing the KeyTask thread.
   * @param  argument: Not used
   * @retval None
   */
-/* USER CODE END Header_StartTask1 */
-void StartTask1(void *argument)
+/* USER CODE END Header_StartKeyTask */
+void StartKeyTask(void *argument)
 {
-  /* USER CODE BEGIN StartTask1 */
+  /* USER CODE BEGIN StartKeyTask */
   /* Infinite loop */
   for(;;)
   {
-    printf("TASK1\r\n");
+    Key_Task();
+        if (Key_GetPressEvent())
+        {
+            ControlMsg_t msg;
 
-        osDelay(500);
+            msg.cmd = CTRL_SAVE;
+            msg.value = 0;
+
+            if(osMessageQueuePut(controlQueueHandle,
+                              &msg,
+                              0,
+                              0)!=osOK)
+			{
+				control_queue_drop_count++;
+			}
+        }
+
+        osDelay(10);
   }
-  /* USER CODE END StartTask1 */
-}
-
-/* USER CODE BEGIN Header_StartTask2 */
-/**
-* @brief Function implementing the Task2 thread.
-* @param argument: Not used
-* @retval None
-*/
-/* USER CODE END Header_StartTask2 */
-void StartTask2(void *argument)
-{
-  /* USER CODE BEGIN StartTask2 */
-  /* Infinite loop */
-  for(;;)
-  {
-     printf("TASK2\r\n");
-
-        osDelay(1000);
-  }
-  /* USER CODE END StartTask2 */
+  /* USER CODE END StartKeyTask */
 }
 
 /* USER CODE BEGIN Header_StartMonitorTask */
@@ -179,10 +217,75 @@ void StartMonitorTask(void *argument)
   /* Infinite loop */
   for(;;)
   {
-	  App_MonitorTask();
+	  
+	 App_MonitorTask();
     osDelay(1000);
+	  
   }
   /* USER CODE END StartMonitorTask */
+}
+
+/* USER CODE BEGIN Header_StartCommandTask */
+/**
+* @brief Function implementing the CommandTask thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_StartCommandTask */
+void StartCommandTask(void *argument)
+{
+  /* USER CODE BEGIN StartCommandTask */
+  /* Infinite loop */
+  for(;;)
+  {
+	osThreadFlagsWait(CMD_RX_FLAG,
+                         osFlagsWaitAny,
+                         osWaitForever);//等事件（通知事件），没有串口事件就 Blocked，收到 CMD_RX_FLAG 才继续处理命令
+	Command_Task();
+
+  }
+  /* USER CODE END StartCommandTask */
+}
+
+/* USER CODE BEGIN Header_StartControlTask */
+/**
+* @brief Function implementing the ControlTask thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_StartControlTask */
+void StartControlTask(void *argument)
+{
+  /* USER CODE BEGIN StartControlTask */
+  /* Infinite loop */
+  for(;;)
+  {
+    ControlMsg_t msg;
+  
+    osMessageQueueGet(controlQueueHandle,
+                      &msg,
+                      NULL,
+                      osWaitForever);
+switch(msg.cmd)  //cmd非0代表执行
+{
+	case CTRL_SERVO_SET:
+		App_ControlSetServoAngle(msg.value);
+	     break;
+	case CTRL_SAVE: 
+		App_ConfigSave();
+	     break;
+	case CTRL_LOAD:	
+		App_ConfigLoad();
+	     break;
+	case CTRL_ENCODER_STEP:
+	  App_ControlEncoderStep(msg.value);
+	    break;
+}
+      
+
+    // 根据 msg.cmd 和 msg.value 执行
+  }
+  /* USER CODE END StartControlTask */
 }
 
 /* Private application code --------------------------------------------------*/
